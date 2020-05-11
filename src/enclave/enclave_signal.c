@@ -208,17 +208,9 @@ void _register_enclave_signal_handlers(int mode)
 
     SGXLKL_VERBOSE("Registering OE exception handler...\n");
 
-    if (mode == SW_DEBUG_MODE)
-    {
-        sgxlkl_host_sw_register_signal_handler(
-            (void*)sgxlkl_enclave_signal_handler);
-    }
-    else
-    {
-        result = oe_add_vectored_exception_handler(
-            true, sgxlkl_enclave_empty_signal_handler);
-        if (result != OE_OK)
-            sgxlkl_fail("OE exception handler registration failed.\n");
-        oe_continue_execution_hook = sgxlkl_enclave_signal_handler;
-    }
+    result = oe_add_vectored_exception_handler(
+        true, sgxlkl_enclave_empty_signal_handler);
+    if (result != OE_OK)
+        sgxlkl_fail("OE exception handler registration failed.\n");
+    oe_continue_execution_hook = sgxlkl_enclave_signal_handler;
 }

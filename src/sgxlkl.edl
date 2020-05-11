@@ -27,10 +27,6 @@ enclave {
             size_t len,
             int prot);
 
-	    // Host call for signal handler registration to support signal handling in software mode
-	    void sgxlkl_host_sw_register_signal_handler(
-            [user_check] void *sgxlkl_enclave_sw_signal_handler);
-
         // Host call for cpuid instruction invocation outside of the enclave in hardware mode
         void sgxlkl_host_hw_cpuid(
             uint32_t leaf,

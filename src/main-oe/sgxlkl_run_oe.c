@@ -70,9 +70,6 @@ extern char __sgxlklrun_text_segment_start;
 /* Function to initialize the host interface */
 extern void sgxlkl_host_interface_initialization(void);
 
-typedef void (*sgxlkl_sw_signal_handler)(oe_exception_record_t*);
-static sgxlkl_sw_signal_handler _sgxlkl_sw_signal_handler;
-
 // Keep track of enclave disk image files so we can flush changes on exit.
 static struct enclave_disk_config* _encl_disks = 0;
 static size_t _encl_disk_cnt = 0;
@@ -1307,124 +1304,6 @@ static void sgxlkl_cleanup(void)
     }
 }
 
-static void serialize_ucontext(
-    const oe_context_t* octx,
-    struct ucontext_t* uctx)
-{
-    uctx->uc_mcontext.gregs[REG_RAX] = octx->rax;
-    uctx->uc_mcontext.gregs[REG_RBX] = octx->rbx;
-    uctx->uc_mcontext.gregs[REG_RCX] = octx->rcx;
-    uctx->uc_mcontext.gregs[REG_RDX] = octx->rdx;
-    uctx->uc_mcontext.gregs[REG_RBP] = octx->rbp;
-    uctx->uc_mcontext.gregs[REG_RSP] = octx->rsp;
-    uctx->uc_mcontext.gregs[REG_RDI] = octx->rdi;
-    uctx->uc_mcontext.gregs[REG_RSI] = octx->rsi;
-    uctx->uc_mcontext.gregs[REG_R8] = octx->r8;
-    uctx->uc_mcontext.gregs[REG_R9] = octx->r9;
-    uctx->uc_mcontext.gregs[REG_R10] = octx->r10;
-    uctx->uc_mcontext.gregs[REG_R11] = octx->r11;
-    uctx->uc_mcontext.gregs[REG_R12] = octx->r12;
-    uctx->uc_mcontext.gregs[REG_R13] = octx->r13;
-    uctx->uc_mcontext.gregs[REG_R14] = octx->r14;
-    uctx->uc_mcontext.gregs[REG_R15] = octx->r15;
-    uctx->uc_mcontext.gregs[REG_RIP] = octx->rip;
-}
-
-static void deserialize_ucontext(
-    const struct ucontext_t* uctx,
-    oe_context_t* octx)
-{
-    octx->rax = uctx->uc_mcontext.gregs[REG_RAX];
-    octx->rbx = uctx->uc_mcontext.gregs[REG_RBX];
-    octx->rcx = uctx->uc_mcontext.gregs[REG_RCX];
-    octx->rdx = uctx->uc_mcontext.gregs[REG_RDX];
-    octx->rbp = uctx->uc_mcontext.gregs[REG_RBP];
-    octx->rsp = uctx->uc_mcontext.gregs[REG_RSP];
-    octx->rdi = uctx->uc_mcontext.gregs[REG_RDI];
-    octx->rsi = uctx->uc_mcontext.gregs[REG_RSI];
-    octx->r8 = uctx->uc_mcontext.gregs[REG_R8];
-    octx->r9 = uctx->uc_mcontext.gregs[REG_R9];
-    octx->r10 = uctx->uc_mcontext.gregs[REG_R10];
-    octx->r11 = uctx->uc_mcontext.gregs[REG_R11];
-    octx->r12 = uctx->uc_mcontext.gregs[REG_R12];
-    octx->r13 = uctx->uc_mcontext.gregs[REG_R13];
-    octx->r14 = uctx->uc_mcontext.gregs[REG_R14];
-    octx->r15 = uctx->uc_mcontext.gregs[REG_R15];
-    octx->rip = uctx->uc_mcontext.gregs[REG_RIP];
-}
-
-static void sgxlkl_sw_mode_signal_handler(
-    int sig,
-    siginfo_t* si,
-    void* sig_data)
-{
-    oe_exception_record_t oe_exception_record = {0};
-    oe_context_t oe_context = {0};
-    uint32_t oe_code = 0;
-
-    ucontext_t* context = (ucontext_t*)sig_data;
-    deserialize_ucontext(context, &oe_context);
-
-    switch (sig)
-    {
-        case SIGFPE:
-            oe_code = OE_EXCEPTION_DIVIDE_BY_ZERO;
-            break;
-        case SIGSEGV:
-            oe_code = OE_EXCEPTION_PAGE_FAULT;
-            break;
-        case SIGILL:
-            oe_code = OE_EXCEPTION_ILLEGAL_INSTRUCTION;
-            break;
-        case SIGBUS:
-            oe_code = OE_EXCEPTION_MISALIGNMENT;
-            break;
-        case SIGTRAP:
-            oe_code = OE_EXCEPTION_BREAKPOINT;
-            break;
-    }
-
-    oe_exception_record.code = oe_code;
-    oe_exception_record.flags = 0;
-    oe_exception_record.address = (uint64_t)si->si_addr;
-    oe_exception_record.context = &oe_context;
-
-    _sgxlkl_sw_signal_handler(&oe_exception_record);
-    serialize_ucontext(&oe_context, context);
-}
-
-void register_enclave_signal_handler(void* signal_handler)
-{
-    _sgxlkl_sw_signal_handler = (sgxlkl_sw_signal_handler)signal_handler;
-}
-
-/* SGX-LKL requires special signal handing for SW mode as OE
- * does not support signal handling for SW mode. */
-static void setup_sw_mode_signal_handlers(void)
-{
-    struct sigaction sa;
-    memset(&sa, 0, sizeof(struct sigaction));
-    sigemptyset(&sa.sa_mask);
-
-    sigemptyset(&sa.sa_mask);
-    sa.sa_flags = SA_SIGINFO;
-    sa.sa_sigaction = sgxlkl_sw_mode_signal_handler;
-    if (sigaction(SIGILL, &sa, NULL) == -1)
-        sgxlkl_host_fail("Failed to register SIGILL handler\n");
-
-    if (sigaction(SIGSEGV, &sa, NULL) == -1)
-        sgxlkl_host_fail("Failed to register SIGSEGV handler\n");
-
-    if (sigaction(SIGFPE, &sa, NULL) == -1)
-        sgxlkl_host_fail("Failed to register SIGFPE handler\n");
-
-    if (sigaction(SIGBUS, &sa, NULL) == -1)
-        sgxlkl_host_fail("Failed to register SIGBUS handler\n");
-
-    if (sigaction(SIGTRAP, &sa, NULL) == -1)
-        sgxlkl_host_fail("Failed to register SIGTRAP handler\n");
-}
-
 static void sgxlkl_read_config_data(
     const char* filename,
     unsigned char** config_data)
@@ -1808,13 +1687,6 @@ int main(int argc, char* argv[], char* envp[])
         (int)sgxlkl_config_uint64(SGXLKL_MASK4),
         sgxlkl_config_str(SGXLKL_GW4),
         sgxlkl_config_str(SGXLKL_HOSTNAME));
-
-    /* SW mode requires special signal handling, since
-     * OE does not support exception handling in SW mode. */
-    if (encl.mode == SW_DEBUG_MODE)
-    {
-        setup_sw_mode_signal_handlers();
-    }
 
     atexit(sgxlkl_cleanup);
 
