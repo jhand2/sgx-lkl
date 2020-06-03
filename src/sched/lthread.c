@@ -417,7 +417,12 @@ void _lthread_free(struct lthread* lt)
 void set_tls_tp(struct lthread* lt)
 {
     if (!libc.user_tls_enabled || !lt->itls)
+    {
+
+        __asm__ volatile("mov %%fs:0x28, %0" ::"r"(lt->old_stack_guard));
+        __asm__ volatile("mov %0, %%fs:0x28" ::"r"(lt->stack_guard));
         return;
+    }
 
     uintptr_t tp_unaligned =
         (uintptr_t)(lt->itls + lt->itlssz - sizeof(struct lthread_tcb_base));
@@ -444,7 +449,10 @@ void set_tls_tp(struct lthread* lt)
 void reset_tls_tp(struct lthread* lt)
 {
     if (!libc.user_tls_enabled || !lt->itls)
+    {
+        __asm__ volatile("mov %0, %%fs:0x28" ::"r"(lt->old_stack_guard));
         return;
+    }
 
     struct schedctx* sp = __scheduler_self();
 

@@ -162,6 +162,10 @@ struct lthread
         long off;
         volatile void* volatile pending;
     } robust_list;
+
+    long long stack_guard; // lthread should set the stack guard even if it is
+                           // scheduled on an ETHREAD TLS area.
+    long long old_stack_guard;
 };
 
 struct lthread_queue
